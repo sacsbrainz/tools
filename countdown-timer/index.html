@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Countdown Timer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        background-color: black;
+        color: white;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        transition: background-color 0.3s ease;
+      }
+
+      body.red {
+        background-color: red;
+      }
+
+      body.gray {
+        background-color: #333;
+      }
+
+      body.black {
+        background-color: black;
+      }
+
+      .container {
+        text-align: center;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
+
+      #timer {
+        font-size: calc(35vw);
+        text-align: center;
+        font-weight: bold;
+        transition: font-size 0.3s ease;
+      }
+
+      #timer-extra {
+        font-size: calc(18vw);
+        text-align: center;
+        font-weight: bold;
+        margin-top: 1rem;
+      }
+
+      .pulse {
+        animation: pulse 1s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+          opacity: 1;
+        }
+
+        50% {
+          transform: scale(1.05);
+          opacity: 0.8;
+        }
+
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      #timer-info-top {
+        font-size: calc(2vw);
+        color: white;
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.5);
+        padding: 10px 20px;
+        border-radius: 5px;
+        text-align: center;
+        font-weight: bold;
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+      }
+
+      #timer-info-bottom {
+        font-size: calc(1vw);
+        color: white;
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        text-align: center;
+        font-weight: bold;
+        white-space: nowrap;
+      }
+
+      /* Responsive adjustments */
+      @media (max-width: 768px) {
+        #timer-info-top {
+          font-size: 3vw;
+          padding: 8px 15px;
+        }
+
+        #timer-info-bottom {
+          font-size: 2vw;
+          padding: 8px;
+          white-space: normal;
+          max-width: 90%;
+        }
+      }
+
+      @media (max-width: 480px) {
+        #timer-info-top {
+          font-size: 4vw;
+        }
+
+        #timer-info-bottom {
+          font-size: 3vw;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div id="timer">05:00</div>
+      <div id="timer-extra"></div>
+      <div id="timer-info-top">Press Space to start</div>
+      <div id="timer-info-bottom">
+        Space to start or pause, Esc to exit fullscreen, Ctrl + F to toggle
+        fullscreen
+      </div>
+    </div>
+
+    <script>
+      class CountdownTimer {
+        constructor() {
+          // Timer state
+          this.mainCountdownInterval = null;
+          this.extraCountdownInterval = null;
+          this.currentTime = 600; // Default countdown time in seconds (10 minutes)
+          this.isPaused = false;
+          this.isTimeUp = false;
+          this.isInSetupMode = false;
+
+          // DOM elements
+          this.elements = {
+            timer: document.getElementById("timer"),
+            timerExtra: document.getElementById("timer-extra"),
+            infoTop: document.getElementById("timer-info-top"),
+            infoBottom: document.getElementById("timer-info-bottom"),
+          };
+
+          // Validate required elements exist
+          this.validateElements();
+
+          // Initialize
+          this.init();
+        }
+
+        validateElements() {
+          for (const [name, element] of Object.entries(this.elements)) {
+            if (!element) {
+              throw new Error(`Required element not found: ${name}`);
+            }
+          }
+        }
+
+        init() {
+          this.setupEventListeners();
+          this.updateDisplay();
+          this.updateInfoDisplay();
+        }
+
+        setupEventListeners() {
+          document.addEventListener("keydown", (e) => this.handleKeyDown(e));
+          document.addEventListener("DOMContentLoaded", () =>
+            this.onDOMContentLoaded()
+          );
+
+          // Prevent context menu
+          document.addEventListener("contextmenu", (e) => e.preventDefault());
+        }
+
+        onDOMContentLoaded() {
+          console.log("Timer initialized");
+        }
+
+        handleKeyDown(e) {
+          const key = e.key;
+
+          // Handle Escape key
+          if (key === "Escape") {
+            this.handleEscapeKey();
+            return;
+          }
+
+          // Handle Ctrl+F for fullscreen
+          if (e.ctrlKey && key.toLowerCase() === "f") {
+            e.preventDefault();
+            this.toggleFullscreen();
+            return;
+          }
+
+          // Handle Space key
+          if (key === " " && !this.isTimeUp) {
+            e.preventDefault();
+            this.togglePause();
+            return;
+          }
+
+          // Handle Enter Key
+          if (key === "Enter" && !this.isTimeUp && this.isInSetupMode) {
+            e.preventDefault();
+            this.togglePause();
+            return;
+          }
+          // Handle Delete key
+          if (key === "Delete") {
+            e.preventDefault();
+            this.enterSetupMode();
+            return;
+          }
+
+          // Handle Arrow keys (only when in setup mode)
+          if (
+            this.isInSetupMode &&
+            (key === "ArrowUp" || key === "ArrowDown")
+          ) {
+            e.preventDefault();
+            const adjustment = key === "ArrowUp" ? 60 : -60;
+            this.adjustTime(adjustment);
+            return;
+          }
+        }
+
+        handleEscapeKey() {
+          console.log("Escape key pressed");
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(console.error);
+          }
+        }
+
+        toggleFullscreen() {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(console.error);
+            return;
+          }
+          document.exitFullscreen().catch(console.error);
+        }
+
+        togglePause() {
+          if (this.isInSetupMode) {
+            this.exitSetupMode();
+            return;
+          }
+
+          this.isPaused = !this.isPaused;
+
+          if (this.isPaused) {
+            this.pauseTimer();
+            return;
+          }
+          this.resumeTimer();
+        }
+
+        pauseTimer() {
+          this.clearIntervals();
+          this.elements.infoTop.style.display = "block";
+          this.elements.infoTop.textContent = "Paused.";
+          document.body.className = "gray";
+          this.elements.timerExtra.textContent = "";
+          this.elements.timerExtra.classList.remove("pulse");
+        }
+
+        resumeTimer() {
+          this.elements.infoTop.style.display = "none";
+          document.body.className = "";
+          this.startCountdown(this.currentTime);
+        }
+
+        enterSetupMode() {
+          this.isInSetupMode = true;
+          this.currentTime = 600;
+          this.clearIntervals();
+
+          this.updateDisplay();
+          this.elements.timer.style.fontSize = "calc(35vw)";
+          this.elements.infoTop.style.display = "block";
+
+          this.elements.infoTop.textContent =
+            "Use up and down arrow keys to adjust the time";
+          document.body.className = "black";
+          this.elements.timerExtra.textContent = "";
+          this.elements.timerExtra.classList.remove("pulse");
+          this.elements.infoBottom.textContent =
+            "Space to start or pause, Esc to exit fullscreen, Ctrl + F to toggle fullscreen";
+        }
+
+        exitSetupMode() {
+          this.isInSetupMode = false;
+          this.isPaused = false;
+          this.elements.infoTop.textContent = "";
+          document.body.className = "";
+          this.startCountdown(this.currentTime);
+        }
+
+        adjustTime(seconds) {
+          if (!this.isPaused && !this.isInSetupMode) return;
+
+          if (seconds > 0) {
+            this.currentTime = Math.min(3600, this.currentTime + seconds); // Max 60 minutes
+          } else {
+            this.currentTime = Math.max(0, this.currentTime + seconds); // Min 0 minutes
+          }
+
+          this.updateDisplay();
+
+          if (!this.isInSetupMode) {
+            this.startCountdown(this.currentTime);
+          }
+        }
+
+        startCountdown(duration) {
+          if (this.isPaused || this.isInSetupMode) return;
+
+          let timer = duration;
+
+          this.applyTimerStyles();
+
+          this.mainCountdownInterval = setInterval(() => {
+            this.updateDisplay(timer);
+
+            if (--timer < 0) {
+              this.handleTimerComplete();
+              return;
+            }
+
+            this.currentTime = timer;
+          }, 1000);
+        }
+
+        applyTimerStyles() {
+          const { timer, timerExtra, infoBottom } = this.elements;
+
+          timer.style.fontSize = "calc(35vw)";
+          timer.style.textAlign = "center";
+          timer.style.fontWeight = "bold";
+
+          timerExtra.style.fontSize = "calc(18vw)";
+          timerExtra.style.textAlign = "center";
+          timerExtra.style.fontWeight = "bold";
+
+          infoBottom.style.fontSize = "calc(1vw)";
+          infoBottom.style.color = "white";
+          infoBottom.style.position = "absolute";
+          infoBottom.style.bottom = "10px";
+          infoBottom.style.left = "50%";
+          infoBottom.style.transform = "translateX(-50%)";
+          infoBottom.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+          infoBottom.style.padding = "10px";
+          infoBottom.style.borderRadius = "5px";
+          infoBottom.style.textAlign = "center";
+          infoBottom.style.fontWeight = "bold";
+        }
+
+        handleTimerComplete() {
+          this.isTimeUp = true;
+          this.elements.infoTop.textContent = "";
+          this.elements.infoTop.style.display = "none";
+
+          this.clearIntervals();
+
+          // Set red background and show time's up message
+          document.body.className = "red";
+          this.elements.timer.textContent = "Time's up!";
+          this.elements.infoBottom.textContent =
+            "Press Del to reset, Esc to exit fullscreen, Ctrl + F to toggle fullscreen";
+          this.elements.timer.style.fontSize = "calc(18vw)";
+
+          // Add pulse effect
+          this.elements.timerExtra.classList.add("pulse");
+
+          // Start overtime counter
+          this.startOvertimeCounter();
+        }
+
+        startOvertimeCounter() {
+          let extraTime = 0;
+
+          this.extraCountdownInterval = setInterval(() => {
+            extraTime++;
+            const extraMinutes = Math.floor(extraTime / 60);
+            const extraSeconds = extraTime % 60;
+            const formattedSeconds =
+              extraSeconds < 10 ? "0" + extraSeconds : extraSeconds;
+            this.elements.timerExtra.textContent = `-${extraMinutes}:${formattedSeconds}`;
+          }, 1000);
+        }
+
+        updateDisplay(timer = this.currentTime) {
+          const minutes = Math.floor(timer / 60);
+          const seconds = timer % 60;
+
+          const formattedMinutes = minutes < 10 ? "0" + minutes : minutes;
+          const formattedSeconds = seconds < 10 ? "0" + seconds : seconds;
+
+          this.elements.timer.textContent = `${formattedMinutes}:${formattedSeconds}`;
+        }
+
+        updateInfoDisplay() {
+          this.elements.infoTop.textContent = "Press Space to start";
+          this.elements.infoBottom.textContent =
+            "Space to start or pause, Esc to exit fullscreen, Ctrl + F to toggle fullscreen";
+        }
+
+        clearIntervals() {
+          if (this.mainCountdownInterval) {
+            clearInterval(this.mainCountdownInterval);
+            this.mainCountdownInterval = null;
+          }
+
+          if (this.extraCountdownInterval) {
+            clearInterval(this.extraCountdownInterval);
+            this.extraCountdownInterval = null;
+          }
+        }
+
+        start() {
+          this.startCountdown(this.currentTime);
+        }
+      }
+
+      // Initialize the countdown timer when the page loads
+      document.addEventListener("DOMContentLoaded", () => {
+        try {
+          const timer = new CountdownTimer();
+          timer.enterSetupMode();
+
+          // Make timer globally accessible for debugging
+          window.countdownTimer = timer;
+        } catch (error) {
+          console.error("Failed to initialize countdown timer:", error);
+        }
+      });
+    </script>
+  </body>
+</html>
